@@ -36,6 +36,14 @@ export function isApiResponse<TData>(
   return typeof payload === "object" && payload !== null && "data" in payload
 }
 
+const ENVELOPE_KEYS = ["data", "result", "payload", "response"] as const
+
 export function unwrapApiResponse<TData>(payload: MaybeApiResponse<TData>): TData {
-  return isApiResponse(payload) ? payload.data : payload
+  if (typeof payload !== "object" || payload === null) return payload as TData
+
+  for (const key of ENVELOPE_KEYS) {
+    if (key in payload) return (payload as Record<string, TData>)[key]
+  }
+
+  return payload as TData
 }

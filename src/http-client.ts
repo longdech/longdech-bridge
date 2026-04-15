@@ -89,10 +89,7 @@ export class HttpClient implements LocaleAttacher, TokenAttacher, DomainAttacher
       this.instance.interceptors.response.eject(this.responseInterceptorId)
     }
 
-    this.requestInterceptorId = this.instance.interceptors.request.use(
-      onRequest,
-      onRequestError
-    )
+    this.requestInterceptorId = this.instance.interceptors.request.use(onRequest, onRequestError)
     this.responseInterceptorId = this.instance.interceptors.response.use(
       onResponse,
       onResponseError
@@ -105,9 +102,7 @@ export class HttpClient implements LocaleAttacher, TokenAttacher, DomainAttacher
 
   async attachTokenToRequest(request: InternalAxiosRequestConfig) {
     const token =
-      (await this.tokenManager?.getToken()) ??
-      (await this.getTokenFromConfig?.()) ??
-      null
+      (await this.tokenManager?.getToken()) ?? (await this.getTokenFromConfig?.()) ?? null
 
     if (!token) return
 

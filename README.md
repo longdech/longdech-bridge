@@ -2,12 +2,12 @@
 
 **Bridge Core** là một bộ hạ tầng frontend giúp chuẩn hóa cách ứng dụng React / Next.js làm việc với:
 
-* HTTP client
-* Token refresh
-* Event communication
-* TanStack Query
-* Query key management
-* Reusable service layer
+- HTTP client
+- Token refresh
+- Event communication
+- TanStack Query
+- Query key management
+- Reusable service layer
 
 Mục tiêu của Bridge là tạo ra một **data layer có thể tái sử dụng giữa nhiều project**, phù hợp với các codebase lớn (50k – 200k+ dòng code).
 
@@ -44,9 +44,9 @@ EventEmitter là lớp giúp các module giao tiếp với nhau bằng **event b
 
 Nó được dùng cho:
 
-* refresh token queue
-* retry request
-* internal bridge communication
+- refresh token queue
+- retry request
+- internal bridge communication
 
 ### Ví dụ
 
@@ -74,11 +74,11 @@ emitter.once("refreshDone", handler)
 
 TokenManager chịu trách nhiệm:
 
-* lưu access token
-* lưu refresh token
-* xoá token khi logout
-* tự kiểm tra hạn JWT bằng `jwt-decode`
-* tự refresh token và gom request đồng thời về 1 lần refresh
+- lưu access token
+- lưu refresh token
+- xoá token khi logout
+- tự kiểm tra hạn JWT bằng `jwt-decode`
+- tự refresh token và gom request đồng thời về 1 lần refresh
 
 ### Ví dụ
 
@@ -116,10 +116,10 @@ const token = await tokenManager.getToken()
 
 Nó cung cấp:
 
-* auto attach bearer token (nếu có `getToken`)
-* request/response interceptor
-* tích hợp trực tiếp với `TokenManager` để auto refresh token trước request
-* có thể override hàm attach locale/domain/token khi cần
+- auto attach bearer token (nếu có `getToken`)
+- request/response interceptor
+- tích hợp trực tiếp với `TokenManager` để auto refresh token trước request
+- có thể override hàm attach locale/domain/token khi cần
 
 ### Khởi tạo
 
@@ -199,8 +199,8 @@ export const queryClient = new QueryClient({
 
 ServiceProvider tạo ra:
 
-* API functions
-* React Query hooks
+- API functions
+- React Query hooks
 
 từ một endpoint duy nhất, đồng bộ key + cache invalidation.
 
@@ -347,17 +347,17 @@ Bridge có thể copy sang project khác.
 
 Thiết kế phù hợp với codebase lớn:
 
-* 100+ API endpoints
-* nhiều developer cùng làm việc
+- 100+ API endpoints
+- nhiều developer cùng làm việc
 
 ---
 
 ### 4. Tích hợp sẵn
 
-* Axios
-* TanStack Query
-* Token refresh queue
-* Event system
+- Axios
+- TanStack Query
+- Token refresh queue
+- Event system
 
 ---
 
@@ -365,16 +365,16 @@ Thiết kế phù hợp với codebase lớn:
 
 Bridge phù hợp cho:
 
-* React
-* Next.js
-* React Native
-* Large scale frontend
+- React
+- Next.js
+- React Native
+- Large scale frontend
 
 Đặc biệt hiệu quả với:
 
-* enterprise dashboard
-* SaaS application
-* internal tools
+- enterprise dashboard
+- SaaS application
+- internal tools
 
 ---
 
@@ -410,17 +410,17 @@ Cho mobile hoặc PWA.
 
 Bridge Core tạo ra một **data infrastructure thống nhất** cho frontend:
 
-* HTTP layer
-* Query layer
-* Service layer
-* Token system
-* Event system
+- HTTP layer
+- Query layer
+- Service layer
+- Token system
+- Event system
 
 Nhờ đó code trở nên:
 
-* dễ mở rộng
-* dễ bảo trì
-* dễ tái sử dụng giữa nhiều project.
+- dễ mở rộng
+- dễ bảo trì
+- dễ tái sử dụng giữa nhiều project.
 
 ---
 

@@ -18,35 +18,26 @@ interface QueryKeys<Params extends Record<string, unknown>> {
 }
 
 interface ServiceProviderOptions<T, C extends Cursor> {
-  /**
-   * Tên param cursor backend yêu cầu. Mặc định là "cursor".
-   */
   cursorParamKey?: string
-  /**
-   * Map response bất kỳ từ backend về shape chuẩn cho infinite query.
-   */
   mapInfiniteResponse?: (payload: unknown) => InfiniteResponse<T, C>
-  /**
-   * Tuỳ chỉnh cách lấy page param kế tiếp.
-   */
   getNextPageParam?: (lastPage: InfiniteResponse<T, C>) => C | undefined
+  mapListResponse?: (payload: unknown) => T[] // thêm dòng này
 }
 
 interface InfiniteMapperConfig<T, C extends Cursor> {
   itemsPath?: string
   nextCursorPath?: string
+  getNextCursor?: (payload: unknown) => C | undefined // thêm dòng này
 }
 
 const getByPath = (input: unknown, path: string): unknown => {
-  return path
-    .split(".")
-    .reduce<unknown>((acc, key) => {
-      if (acc && typeof acc === "object" && key in acc) {
-        return (acc as Record<string, unknown>)[key]
-      }
+  return path.split(".").reduce<unknown>((acc, key) => {
+    if (acc && typeof acc === "object" && key in acc) {
+      return (acc as Record<string, unknown>)[key]
+    }
 
-      return undefined
-    }, input)
+    return undefined
+  }, input)
 }
 
 /**
@@ -60,16 +51,18 @@ export function createInfiniteResponseMapper<T, C extends Cursor = Cursor>(
   const nextCursorPath = config.nextCursorPath ?? "nextCursor"
 
   return (payload: unknown): InfiniteResponse<T, C> => {
-    const normalized = unwrapApiResponse(
-      payload as MaybeApiResponse<Record<string, unknown>>
-    )
+    const normalized = unwrapApiResponse(payload as MaybeApiResponse<Record<string, unknown>>)
 
     const mappedItems = getByPath(normalized, itemsPath)
-    const mappedNextCursor = getByPath(normalized, nextCursorPath)
+
+    // Thêm logic này
+    const mappedNextCursor = config.getNextCursor
+      ? config.getNextCursor(normalized)
+      : (getByPath(normalized, nextCursorPath) as C | undefined)
 
     return {
       items: Array.isArray(mappedItems) ? (mappedItems as T[]) : [],
-      nextCursor: mappedNextCursor as C | undefined,
+      nextCursor: mappedNextCursor,
     }
   }
 }
@@ -86,12 +79,8 @@ export function createServiceProvider(client: HttpClient) {
   return function defineService<
     T extends { id: Id },
     Params extends Record<string, unknown> = {},
-    C extends Cursor = Cursor
-  >(
-    baseUrl: string,
-    keys: QueryKeys<Params>,
-    options?: ServiceProviderOptions<T, C>
-  ) {
+    C extends Cursor = Cursor,
+  >(baseUrl: string, keys: QueryKeys<Params>, options?: ServiceProviderOptions<T, C>) {
     const cursorParamKey = options?.cursorParamKey ?? "cursor"
     const mapInfiniteResponse =
       options?.mapInfiniteResponse ??
@@ -102,7 +91,12 @@ export function createServiceProvider(client: HttpClient) {
 
     const api = {
       list: (params?: Params) =>
-        client.get<T[]>(baseUrl, toRequestParams(params)),
+        client
+          .get<unknown>(baseUrl, toRequestParams(params))
+          .then(
+            options?.mapListResponse ??
+              ((payload) => unwrapApiResponse(payload as MaybeApiResponse<T[]>))
+          ),
 
       infinite: (params?: Params, cursor?: C) =>
         client.get<MaybeApiResponse<InfiniteResponse<T, C>>>(baseUrl, {
@@ -110,26 +104,19 @@ export function createServiceProvider(client: HttpClient) {
           [cursorParamKey]: cursor as HttpQueryParamValue,
         }),
 
-      detail: (id: Id) =>
-        client.get<T>(`${baseUrl}/${id}`),
+      detail: (id: Id) => client.get<T>(`${baseUrl}/${id}`),
 
-      create: (data: Partial<T>) =>
-        client.post<T>(baseUrl, data),
+      create: (data: Partial<T>) => client.post<T>(baseUrl, data),
 
-      update: (id: Id, data: Partial<T>) =>
-        client.put<T>(`${baseUrl}/${id}`, data),
+      update: (id: Id, data: Partial<T>) => client.put<T>(`${baseUrl}/${id}`, data),
 
-      remove: (id: Id) =>
-        client.delete<void>(`${baseUrl}/${id}`),
+      remove: (id: Id) => client.delete<void>(`${baseUrl}/${id}`),
     }
 
     const hooks = {
       useList(
         params?: Params,
-        options?: Omit<
-          UseQueryOptions<T[], Error>,
-          "queryKey" | "queryFn"
-        >
+        options?: Omit<UseQueryOptions<T[], Error>, "queryKey" | "queryFn">
       ) {
         return useQuery({
           queryKey: keys.list(params),
@@ -167,13 +154,7 @@ export function createServiceProvider(client: HttpClient) {
         })
       },
 
-      useDetail(
-        id: Id,
-        options?: Omit<
-          UseQueryOptions<T, Error>,
-          "queryKey" | "queryFn"
-        >
-      ) {
+      useDetail(id: Id, options?: Omit<UseQueryOptions<T, Error>, "queryKey" | "queryFn">) {
         return useQuery({
           queryKey: keys.detail(id),
           queryFn: () => api.detail(id),
@@ -200,8 +181,7 @@ export function createServiceProvider(client: HttpClient) {
         const qc = useQueryClient()
 
         return useMutation({
-          mutationFn: ({ id, data }: { id: Id; data: Partial<T> }) =>
-            api.update(id, data),
+          mutationFn: ({ id, data }: { id: Id; data: Partial<T> }) => api.update(id, data),
 
           onSuccess: (_, vars) => {
             qc.invalidateQueries({

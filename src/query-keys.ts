@@ -10,7 +10,7 @@ function stableParams(params: QueryParams) {
       return value.map((item) => stableValue(item))
     }
 
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
       return stableParams(value as QueryParams)
     }
 
@@ -32,9 +32,7 @@ function stableParams(params: QueryParams) {
  * Query key factory theo từng resource scope.
  * Dùng chung để tránh key mismatch giữa hooks/mutations.
  */
-export function createQueryKeys<const T extends string>(
-  scope: T
-) {
+export function createQueryKeys<const T extends string>(scope: T) {
   return {
     scope,
 
@@ -43,9 +41,7 @@ export function createQueryKeys<const T extends string>(
     lists: () => [scope, "list"] as const,
 
     list: (params?: QueryParams) =>
-      params
-        ? ([scope, "list", stableParams(params)] as const)
-        : ([scope, "list"] as const),
+      params ? ([scope, "list", stableParams(params)] as const) : ([scope, "list"] as const),
 
     infinite: (params?: QueryParams) =>
       params
@@ -54,7 +50,6 @@ export function createQueryKeys<const T extends string>(
 
     details: () => [scope, "detail"] as const,
 
-    detail: (id: string | number) =>
-      [scope, "detail", id] as const
+    detail: (id: string | number) => [scope, "detail", id] as const,
   }
 }
