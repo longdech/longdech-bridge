@@ -51,14 +51,18 @@ export function createInfiniteResponseMapper<T, C extends Cursor = Cursor>(
   const nextCursorPath = config.nextCursorPath ?? "nextCursor"
 
   return (payload: unknown): InfiniteResponse<T, C> => {
-    const normalized = unwrapApiResponse(payload as MaybeApiResponse<Record<string, unknown>>)
+    const unwrapped = unwrapApiResponse(payload as MaybeApiResponse<unknown>)
+    const isEnveloped = unwrapped !== payload
 
-    const mappedItems = getByPath(normalized, itemsPath)
+    // Tìm items: ưu tiên unwrapped, fallback raw nếu có envelope
+    const mappedItems =
+      getByPath(unwrapped, itemsPath) ?? (isEnveloped ? getByPath(payload, itemsPath) : undefined)
 
-    // Thêm logic này
+    // Tìm cursor: getNextCursor luôn nhận payload gốc để đọc được meta
     const mappedNextCursor = config.getNextCursor
-      ? config.getNextCursor(normalized)
-      : (getByPath(normalized, nextCursorPath) as C | undefined)
+      ? config.getNextCursor(payload)
+      : ((getByPath(unwrapped, nextCursorPath) ??
+          (isEnveloped ? getByPath(payload, nextCursorPath) : undefined)) as C | undefined)
 
     return {
       items: Array.isArray(mappedItems) ? (mappedItems as T[]) : [],

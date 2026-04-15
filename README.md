@@ -216,14 +216,34 @@ export const userService = defineService("/users", userKeys)
 
 Không cần ép backend trả đúng `items/nextCursor`, chỉ cần map một lần:
 
-```
+```typescript
 const defineService = createServiceProvider(httpClient)
 
+// Backend trả: { results: T[], next_cursor: string }
 export const userService = defineService("/users", userKeys, {
   cursorParamKey: "next_cursor",
   mapInfiniteResponse: createInfiniteResponseMapper({
     itemsPath: "results",
     nextCursorPath: "next_cursor",
+  }),
+})
+
+// Backend trả: { docs: T[], hasNextPage: boolean, nextPage: number }
+export const postService = defineService("/posts", postKeys, {
+  cursorParamKey: "page",
+  mapInfiniteResponse: createInfiniteResponseMapper({
+    itemsPath: "docs",
+    getNextCursor: (data: any) => (data.hasNextPage ? data.nextPage : undefined),
+  }),
+})
+
+// Backend trả: { data: T[], meta: { hasNextPage: boolean, nextPage: number } }
+export const commentService = defineService("/comments", commentKeys, {
+  cursorParamKey: "page",
+  mapInfiniteResponse: createInfiniteResponseMapper({
+    itemsPath: "data",
+    getNextCursor: (payload: any) =>
+      payload.meta?.hasNextPage ? payload.meta.nextPage : undefined,
   }),
 })
 ```
