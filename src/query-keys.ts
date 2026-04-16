@@ -2,18 +2,12 @@ export type QueryParams = Record<string, unknown>
 type QueryValue = string | number | boolean | QueryValue[] | QueryParams | null | undefined
 
 /**
- * Sort params by key to keep query keys deterministic.
+ * Sort params by key để query key luôn deterministic.
  */
-function stableParams(params: QueryParams) {
+function stableParams(params: QueryParams): QueryParams {
   const stableValue = (value: QueryValue): QueryValue => {
-    if (Array.isArray(value)) {
-      return value.map((item) => stableValue(item))
-    }
-
-    if (value && typeof value === "object") {
-      return stableParams(value as QueryParams)
-    }
-
+    if (Array.isArray(value)) return value.map(stableValue)
+    if (value && typeof value === "object") return stableParams(value as QueryParams)
     return value
   }
 
@@ -22,7 +16,6 @@ function stableParams(params: QueryParams) {
     .reduce((acc, key) => {
       const value = params[key]
       if (value === undefined) return acc
-
       acc[key] = stableValue(value as QueryValue)
       return acc
     }, {} as QueryParams)
@@ -31,25 +24,26 @@ function stableParams(params: QueryParams) {
 /**
  * Query key factory theo từng resource scope.
  * Dùng chung để tránh key mismatch giữa hooks/mutations.
+ *
+ * @example
+ * const userKeys = createQueryKeys("users")
+ * userKeys.list({ page: 1 })  // ["users", "list", { page: 1 }]
+ * userKeys.detail(5)          // ["users", "detail", 5]
  */
 export function createQueryKeys<const T extends string>(scope: T) {
   return {
     scope,
-
     all: [scope] as const,
-
     lists: () => [scope, "list"] as const,
-
     list: (params?: QueryParams) =>
       params ? ([scope, "list", stableParams(params)] as const) : ([scope, "list"] as const),
-
     infinite: (params?: QueryParams) =>
       params
         ? ([scope, "infinite", stableParams(params)] as const)
         : ([scope, "infinite"] as const),
-
     details: () => [scope, "detail"] as const,
-
     detail: (id: string | number) => [scope, "detail", id] as const,
+    // Custom key generator
+    custom: (...parts: unknown[]) => [scope, ...parts] as const,
   }
 }

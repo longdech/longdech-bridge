@@ -1,149 +1,216 @@
 import axios, {
   AxiosError,
-  AxiosRequestConfig,
-  AxiosResponse,
-  CreateAxiosDefaults,
-  InternalAxiosRequestConfig,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  type CreateAxiosDefaults,
+  type InternalAxiosRequestConfig,
 } from "axios"
 import { TokenManager } from "./token-manager"
 
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 export type HttpQueryParamValue = string | number | boolean | undefined
 export type HttpQueryParams = Record<string, HttpQueryParamValue>
 
 export interface HttpRequestOptions<TBody = unknown> {
-  method?: HttpMethod
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
   body?: TBody
   headers?: Record<string, string>
   params?: HttpQueryParams
-}
-
-export interface LocaleAttacher {
-  attachLocaleToRequest(request: InternalAxiosRequestConfig): Promise<void> | void
-}
-
-export interface TokenAttacher {
-  attachTokenToRequest(request: InternalAxiosRequestConfig): Promise<void> | void
-}
-
-export interface DomainAttacher {
-  attachDomainToRequest(request: InternalAxiosRequestConfig): Promise<void> | void
+  signal?: AbortSignal
+  /**
+   * Skip auto token attachment for this request
+   */
+  skipAuth?: boolean
+  /**
+   * Skip deduplication for this request
+   */
+  skipDeduplication?: boolean
 }
 
 export interface HttpClientConfig extends CreateAxiosDefaults {
   baseURL: string
-  getToken?: () => Promise<string | null> | string | null
   tokenManager?: TokenManager
-}
-
-export type InterceptorsConfig = {
-  onRequest?: (
-    request: InternalAxiosRequestConfig
-  ) => Promise<InternalAxiosRequestConfig> | InternalAxiosRequestConfig
-  onRequestError?: (error: AxiosError) => Promise<never>
-  onResponse?: (response: AxiosResponse) => AxiosResponse | Promise<AxiosResponse>
-  onResponseError?: (error: AxiosError) => Promise<never>
+  getToken?: () => Promise<string | null> | string | null
+  /**
+   * Gắn locale vào request. VD: request.headers["Accept-Language"] = getLocale()
+   */
+  attachLocale?: (request: InternalAxiosRequestConfig) => void | Promise<void>
+  /**
+   * Gắn domain/tenant vào request nếu cần.
+   */
+  attachDomain?: (request: InternalAxiosRequestConfig) => void | Promise<void>
+  enableDeduplication?: boolean
+  /**
+   * Custom error handler - FE tự implement
+   */
+  onError?: (error: unknown, requestConfig: HttpRequestOptions) => void
+  /**
+   * Interceptor để xử lý response trước khi trả về
+   */
+  transformResponse?: <T>(response: AxiosResponse<T>) => T
 }
 
 /**
- * Axios-based HTTP client with overridable request enrichers.
+ * Axios-based HTTP client.
  */
-export class HttpClient implements LocaleAttacher, TokenAttacher, DomainAttacher {
+export class HttpClient {
   protected instance: ReturnType<typeof axios.create>
   private readonly getTokenFromConfig?: HttpClientConfig["getToken"]
   protected readonly tokenManager?: TokenManager
-  private requestInterceptorId: number | null = null
-  private responseInterceptorId: number | null = null
+  private readonly attachLocale?: HttpClientConfig["attachLocale"]
+  private readonly attachDomain?: HttpClientConfig["attachDomain"]
+  private readonly enableDeduplication: boolean
+  private pendingRequests: Map<string, Promise<unknown>> = new Map()
+  private readonly onError?: HttpClientConfig["onError"]
+  private readonly transformResponse?: HttpClientConfig["transformResponse"]
 
   constructor(config: HttpClientConfig) {
-    const { getToken, tokenManager, ...axiosConfig } = config
+    const {
+      getToken,
+      tokenManager,
+      attachLocale,
+      attachDomain,
+      enableDeduplication = true,
+      onError,
+      transformResponse,
+      ...axiosConfig
+    } = config
 
     this.getTokenFromConfig = getToken
     this.tokenManager = tokenManager
+    this.attachLocale = attachLocale
+    this.attachDomain = attachDomain
+    this.enableDeduplication = enableDeduplication
+    this.onError = onError
+    this.transformResponse = transformResponse
     this.instance = axios.create(axiosConfig)
-    this.setupInterceptors()
-  }
 
-  protected onRequest = async (request: InternalAxiosRequestConfig) => {
-    await this.attachTokenToRequest(request)
-    await this.attachLocaleToRequest(request)
-    await this.attachDomainToRequest(request)
-    return request
-  }
+    this.instance.interceptors.request.use(
+      async (request) => {
+        await this.enrichRequest(request)
+        return request
+      },
+      (error: AxiosError) => {
+        this.onError?.(error, {})
+        return Promise.reject(error)
+      }
+    )
 
-  protected onRequestError = (error: AxiosError) => Promise.reject(error)
-  protected onResponse = (response: AxiosResponse) => response
-  protected onResponseError = (error: AxiosError) => Promise.reject(error)
-
-  setupInterceptors({
-    onRequest = this.onRequest,
-    onRequestError = this.onRequestError,
-    onResponse = this.onResponse,
-    onResponseError = this.onResponseError,
-  }: InterceptorsConfig = {}) {
-    if (this.requestInterceptorId !== null) {
-      this.instance.interceptors.request.eject(this.requestInterceptorId)
-    }
-
-    if (this.responseInterceptorId !== null) {
-      this.instance.interceptors.response.eject(this.responseInterceptorId)
-    }
-
-    this.requestInterceptorId = this.instance.interceptors.request.use(onRequest, onRequestError)
-    this.responseInterceptorId = this.instance.interceptors.response.use(
-      onResponse,
-      onResponseError
+    this.instance.interceptors.response.use(
+      (response) => {
+        return this.transformResponse ? this.transformResponse(response) : response
+      },
+      (error: AxiosError) => {
+        const requestConfig = error.config as HttpRequestOptions | undefined
+        this.onError?.(error, requestConfig || {})
+        return Promise.reject(error)
+      }
     )
   }
 
-  async attachLocaleToRequest(_request: InternalAxiosRequestConfig) {}
+  /**
+   * Enrichment pipeline: token → locale → domain.
+   */
+  protected async enrichRequest(request: InternalAxiosRequestConfig) {
+    const skipAuth = (request as any).skipAuth
+    if (!skipAuth) {
+      const token =
+        (await this.tokenManager?.getToken()) ?? (await this.getTokenFromConfig?.()) ?? null
+      if (token) {
+        request.headers = request.headers ?? {}
+        request.headers.Authorization = `Bearer ${token}`
+      }
+    }
 
-  async attachDomainToRequest(_request: InternalAxiosRequestConfig) {}
+    await this.attachLocale?.(request)
+    await this.attachDomain?.(request)
+  }
 
-  async attachTokenToRequest(request: InternalAxiosRequestConfig) {
-    const token =
-      (await this.tokenManager?.getToken()) ?? (await this.getTokenFromConfig?.()) ?? null
-
-    if (!token) return
-
-    request.headers = request.headers ?? {}
-    request.headers.Authorization = `Bearer ${token}`
+  private getDedupeKey(url: string, options: HttpRequestOptions): string {
+    const headersHash = options.headers ? JSON.stringify(options.headers) : ""
+    const skipAuth = options.skipAuth ? "skip" : ""
+    return JSON.stringify({ url, params: options.params, headersHash, skipAuth })
   }
 
   async request<TResponse, TBody = unknown>(
     url: string,
     options: HttpRequestOptions<TBody> = {}
   ): Promise<TResponse> {
-    const { method = "GET", body, headers, params } = options
+    const { method = "GET", body, headers, params, signal, skipAuth, skipDeduplication } = options
 
-    const response = await this.instance.request<TResponse, AxiosResponse<TResponse>, TBody>({
+    const requestConfig = {
       method,
       url,
       data: body,
       headers,
       params,
-    })
+      signal,
+      skipAuth,
+    }
 
-    return response.data
+    const shouldDedupe = this.enableDeduplication && method === "GET" && !skipDeduplication
+
+    if (shouldDedupe) {
+      const key = this.getDedupeKey(url, options)
+
+      if (this.pendingRequests.has(key)) {
+        return this.pendingRequests.get(key) as Promise<TResponse>
+      }
+
+      const promise = this.instance
+        .request<TResponse, AxiosResponse<TResponse>, TBody>(requestConfig)
+        .then((r) => r.data)
+        .finally(() => this.pendingRequests.delete(key))
+
+      this.pendingRequests.set(key, promise)
+      return promise
+    }
+
+    return this.instance
+      .request<TResponse, AxiosResponse<TResponse>, TBody>(requestConfig)
+      .then((r) => r.data)
   }
 
-  get<T>(url: string, params?: HttpQueryParams) {
-    return this.request<T>(url, { params })
+  get<T>(url: string, params?: HttpQueryParams, options?: Omit<HttpRequestOptions, "params">) {
+    return this.request<T>(url, { ...options, params })
   }
 
-  post<T, B = unknown>(url: string, body?: B) {
-    return this.request<T, B>(url, { method: "POST", body })
+  post<T, B = unknown>(url: string, body?: B, options?: Omit<HttpRequestOptions<B>, "body">) {
+    return this.request<T, B>(url, { ...options, method: "POST", body })
   }
 
-  put<T, B = unknown>(url: string, body?: B) {
-    return this.request<T, B>(url, { method: "PUT", body })
+  put<T, B = unknown>(url: string, body?: B, options?: Omit<HttpRequestOptions<B>, "body">) {
+    return this.request<T, B>(url, { ...options, method: "PUT", body })
   }
 
-  patch<T, B = unknown>(url: string, body?: B) {
-    return this.request<T, B>(url, { method: "PATCH", body })
+  patch<T, B = unknown>(url: string, body?: B, options?: Omit<HttpRequestOptions<B>, "body">) {
+    return this.request<T, B>(url, { ...options, method: "PATCH", body })
   }
 
-  delete<T>(url: string, config?: AxiosRequestConfig) {
-    return this.instance.delete<T, AxiosResponse<T>>(url, config).then((r) => r.data)
+  delete<T>(url: string, options?: Omit<HttpRequestOptions, "method" | "body">) {
+    return this.request<T>(url, { ...options, method: "DELETE" })
+  }
+
+  /**
+   * Upload file với multipart/form-data
+   */
+  upload<TResponse, TBody = FormData>(
+    url: string,
+    formData: TBody,
+    options?: Omit<HttpRequestOptions<TBody>, "body" | "method">
+  ): Promise<TResponse> {
+    const headers: Record<string, string> = {
+      "Content-Type": "multipart/form-data",
+    }
+
+    if (options?.headers) {
+      Object.assign(headers, options.headers)
+    }
+
+    return this.request<TResponse, TBody>(url, {
+      ...options,
+      method: "POST",
+      body: formData,
+      headers,
+    } as HttpRequestOptions<TBody>)
   }
 }

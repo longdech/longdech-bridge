@@ -4,46 +4,96 @@
 export type Id = string | number
 
 /**
- * Standard API envelope used by many backends.
+ * Page used for infinite pagination.
  */
-export interface ApiResponse<TData> {
-  data: TData
-  success?: boolean
-  message?: string
+export type Page = string | number | null | undefined
+
+/**
+ * Pagination metadata for list response.
+ */
+export interface PaginationMeta {
+  currentPage: number
+  perPage: number
+  total: number
+  totalPages: number
+  hasNextPage: boolean
+  hasPreviousPage: boolean
 }
 
 /**
- * Some endpoints return raw payload, others wrap into ApiResponse.
+ * Standard list response with metadata.
  */
-export type MaybeApiResponse<TData> = TData | ApiResponse<TData>
+export interface ListResponse<T> {
+  data: T[]
+  meta: PaginationMeta
+}
 
 /**
- * Cursor used for infinite pagination.
+ * Standard shape for infinite list responses.
  */
-export type Cursor = string | number | null | undefined
-
-/**
- * Standard shape for cursor-based list responses.
- */
-export interface InfiniteResponse<T, C = Cursor> {
+export interface InfiniteResponse<T, C = Page> {
   items: T[]
   nextCursor?: C
-}
-
-export function isApiResponse<TData>(
-  payload: MaybeApiResponse<TData>
-): payload is ApiResponse<TData> {
-  return typeof payload === "object" && payload !== null && "data" in payload
-}
-
-const ENVELOPE_KEYS = ["data", "result", "payload", "response"] as const
-
-export function unwrapApiResponse<TData>(payload: MaybeApiResponse<TData>): TData {
-  if (typeof payload !== "object" || payload === null) return payload as TData
-
-  for (const key of ENVELOPE_KEYS) {
-    if (key in payload) return (payload as Record<string, TData>)[key]
+  previousCursor?: C
+  meta?: {
+    hasNextPage: boolean
+    hasPreviousPage: boolean
   }
+}
 
-  return payload as TData
+/**
+ * Mapping configuration for ResponseMapper.
+ * Tự define theo backend của bạn, không dùng preset.
+ */
+export interface MappingConfig {
+  // List response
+  listDataPath?: string
+  listTotalPath?: string
+  listPagePath?: string
+  listLimitPath?: string
+  listTotalPagesPath?: string
+
+  // Infinite response
+  infiniteItemsPath?: string
+  infiniteNextCursorPath?: string
+  infinitePrevCursorPath?: string
+  infiniteHasNextPath?: string
+  infiniteHasPrevPath?: string
+
+  // Transformers
+  transformPage?: (page: number) => number
+  transformCursor?: (cursor: any) => any
+}
+
+/**
+ * API error response shape (common).
+ * FE tự định nghĩa dựa trên backend của mình.
+ */
+export interface ApiErrorResponse {
+  error: string
+  message: string
+  statusCode: number
+  errors?: Record<string, string[]>
+}
+
+/**
+ * Type guard để kiểm tra API error response.
+ */
+export function isApiErrorResponse(payload: unknown): payload is ApiErrorResponse {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "error" in payload &&
+    "message" in payload &&
+    "statusCode" in payload
+  )
+}
+
+/**
+ * Pagination params.
+ */
+export interface PaginationParams {
+  page?: number
+  limit?: number
+  offset?: number
 }
