@@ -1,6 +1,6 @@
 {
   "name": "@longdech/bridge",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Reusable HTTP, token, and React Query bridge utilities.",
   "license": "ISC",
   "packageManager": "pnpm@10.13.1",
