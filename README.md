@@ -1,450 +1,128 @@
-# Bridge Core (HTTP + React Query Infrastructure)
+# Bridge Core (@longdech/bridge)
 
-**Bridge Core** là một bộ hạ tầng frontend giúp chuẩn hóa cách ứng dụng React / Next.js làm việc với:
+**Bridge Core** là một bộ hạ tầng Frontend (Data Infrastructure) chuyên nghiệp, được thiết kế để chuẩn hóa cách ứng dụng React / Next.js giao tiếp với API. Thư viện cung cấp lớp trừu tượng (Abstraction Layer) mạnh mẽ để tự động hóa React Query, quản lý Auth Token và đồng bộ dữ liệu.
 
-- HTTP client
-- Token refresh
-- Event communication
-- TanStack Query
-- Query key management
-- Reusable service layer
+## ✨ Tính năng chính
 
-Mục tiêu của Bridge là tạo ra một **data layer có thể tái sử dụng giữa nhiều project**, phù hợp với các codebase lớn (50k – 200k+ dòng code).
-
----
-
-# Kiến trúc tổng thể
-
-```
-core/
-   event-emitter.ts
-   token-manager.ts
-   http-client.ts
-   query-keys.ts
-   react-query.ts
-   service-provider.ts
-```
-
-Bridge chia data layer thành các phần rõ ràng:
-
-| Module          | Chức năng                             |
-| --------------- | ------------------------------------- |
-| EventEmitter    | Hệ thống event nội bộ                 |
-| TokenManager    | Quản lý access token và refresh token |
-| HttpClient      | HTTP client với interceptor           |
-| QueryKeys       | Chuẩn hóa TanStack Query key          |
-| ReactQuery      | QueryClient config                    |
-| ServiceProvider | Tạo API + hooks tự động               |
+- 🚀 **Zero External Dependencies:** Thư viện thuần túy, không phụ thuộc vào các thư viện bên ngoài (lodash, v.v.), giúp tối ưu bundle size.
+- 🔗 **Hybrid Mapping:** Cơ chế ánh xạ dữ liệu linh hoạt thông qua **String Path** hoặc **Callback Function** (Type-safe & High performance).
+- 🔐 **Smart Token Management:** Hệ thống quản lý Access/Refresh Token tích hợp hàng đợi (queue), xử lý race-condition khi làm mới token.
+- 🛠️ **Automated React Query:** Tự động hóa việc tạo Hooks (useList, useDetail, useMutation...) thông qua Service Factory.
+- 🌍 **Multi-tenant & Locale Support:** Kiến trúc sẵn sàng cho các ứng dụng đa ngôn ngữ và đa nền tảng.
 
 ---
 
-# 1. EventEmitter
+## 📂 Kiến thức kiến trúc
 
-EventEmitter là lớp giúp các module giao tiếp với nhau bằng **event bất đồng bộ**.
-
-Nó được dùng cho:
-
-- refresh token queue
-- retry request
-- internal bridge communication
-
-### Ví dụ
-
-```
-const emitter = new EventEmitter()
-
-emitter.on("refreshDone", (token) => {
-  console.log(token)
-})
-
-emitter.emit("refreshDone", "new_token")
-```
-
-### once
-
-Listener chỉ chạy một lần.
-
-```
-emitter.once("refreshDone", handler)
-```
+| Module | Vai trò |
+| :--- | :--- |
+| **TokenManager** | Xử lý Authentication: Lưu trữ, kiểm tra hiệu lực và làm mới token. |
+| **HttpClient** | Wrapper trên Axios: Làm giàu request (token, locale, deduplication). |
+| **ResponseMapper** | Chuyển đổi dữ liệu: Ánh xạ API response sang cấu hình chuẩn của dự án. |
+| **ServiceProvider** | Factory: Tạo trọn bộ API + React Query Hooks dựa trên resource endpoint. |
+| **QueryKeys** | Key Factory: Chuẩn hóa Query Key, đảm bảo tính deterministic cho cache. |
 
 ---
 
-# 2. TokenManager
+## 🛠️ Hướng dẫn sử dụng
 
-TokenManager chịu trách nhiệm:
-
-- lưu access token
-- lưu refresh token
-- xoá token khi logout
-- tự kiểm tra hạn JWT bằng `jwt-decode`
-- tự refresh token và gom request đồng thời về 1 lần refresh
-
-### Ví dụ
-
-```
-const tokenManager = new TokenManager()
-
-tokenManager.setAccessToken(token)
-tokenManager.getAccessToken()
-
-tokenManager.clear()
-```
-
-### Advanced refresh flow
-
-```
-const tokenManager = new TokenManager({
-  getAccessToken: () => storage.accessToken,
-  getRefreshToken: () => storage.refreshToken,
-  executeRefreshToken: async () => authApi.refresh(storage.refreshToken),
-  onRefreshTokenSuccess: ({ accessToken, refreshToken }) => {
-    storage.accessToken = accessToken
-    storage.refreshToken = refreshToken
-  },
-  onInvalidRefreshToken: () => redirectToLogin(),
-})
-
-const token = await tokenManager.getToken()
-```
-
----
-
-# 3. HttpClient
-
-`HttpClient` là wrapper trên `axios` để chuẩn hóa HTTP layer.
-
-Nó cung cấp:
-
-- auto attach bearer token (nếu có `getToken`)
-- request/response interceptor
-- tích hợp trực tiếp với `TokenManager` để auto refresh token trước request
-- có thể override hàm attach locale/domain/token khi cần
-
-### Khởi tạo
-
-```
-const httpClient = new HttpClient({
-  baseURL: API_URL,
-  tokenManager,
-})
-```
-
-### Request
-
-```
-httpClient.get("/users")
-httpClient.get("/users", { page: 1, active: true })
-httpClient.post("/users", data)
-httpClient.put("/users/1", data)
-httpClient.delete("/users/1")
-```
-
----
-
-# 4. Query Key Factory
-
-Query keys được chuẩn hóa bằng factory.
-
-```
-const userKeys = createQueryKeys("users")
-```
-
-Các key có sẵn:
-
-```
-userKeys.all
-userKeys.lists()
-userKeys.list(params)
-userKeys.details()
-userKeys.detail(id)
-userKeys.infinite(params)
-```
-
-### Ví dụ
-
-```
-queryKey: userKeys.list({ page: 1 })
-```
-
----
-
-# 5. React Query Configuration
-
-Bridge cung cấp một `QueryClient` được cấu hình sẵn.
-
-```
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 60000,
-      retry: 1,
-      refetchOnWindowFocus: false
-    }
-  }
-})
-```
-
-### Provider
-
-```
-<QueryClientProvider client={queryClient}>
-   <App />
-</QueryClientProvider>
-```
-
----
-
-# 6. Service Provider
-
-ServiceProvider tạo ra:
-
-- API functions
-- React Query hooks
-
-từ một endpoint duy nhất, đồng bộ key + cache invalidation.
-
-### Tạo service
-
-```
-const defineService = createServiceProvider(httpClient)
-
-export const userService = defineService("/users", userKeys)
-```
-
-### Tạo service (flexible infinite response)
-
-Không cần ép backend trả đúng `items/nextCursor`, chỉ cần map một lần:
+### 1. Cấu hình Token Manager
+Sử dụng `TokenManager` để quản lý phiên đăng nhập và luồng làm mới token.
 
 ```typescript
-const defineService = createServiceProvider(httpClient)
+import { TokenManager } from "@longdech/bridge";
 
-// Backend trả: { results: T[], next_cursor: string }
-export const userService = defineService("/users", userKeys, {
-  cursorParamKey: "next_cursor",
-  mapInfiniteResponse: createInfiniteResponseMapper({
-    itemsPath: "results",
-    nextCursorPath: "next_cursor",
-  }),
-})
+const tokenManager = new TokenManager({
+  getAccessToken: () => localStorage.getItem("access_token"),
+  getRefreshToken: () => localStorage.getItem("refresh_token"),
+  executeRefreshToken: async () => {
+    // Gọi API refresh token của bạn
+    const res = await api.auth.refresh(); 
+    return { accessToken: res.at, refreshToken: res.rt };
+  },
+  onInvalidRefreshToken: () => {
+    // Xử lý khi không thể refresh (ví dụ: logout)
+    window.location.href = "/login";
+  }
+});
+```
 
-// Backend trả: { docs: T[], hasNextPage: boolean, nextPage: number }
-export const postService = defineService("/posts", postKeys, {
-  cursorParamKey: "page",
-  mapInfiniteResponse: createInfiniteResponseMapper({
-    itemsPath: "docs",
-    getNextCursor: (data: any) => (data.hasNextPage ? data.nextPage : undefined),
-  }),
-})
+### 2. Khởi tạo HttpClient
+Quản lý tập trung baseURL và các logic enrichment (Headers, Locale).
 
-// Backend trả: { data: T[], meta: { hasNextPage: boolean, nextPage: number } }
-export const commentService = defineService("/comments", commentKeys, {
-  cursorParamKey: "page",
-  mapInfiniteResponse: createInfiniteResponseMapper({
-    itemsPath: "data",
-    getNextCursor: (payload: any) =>
-      payload.meta?.hasNextPage ? payload.meta.nextPage : undefined,
-  }),
-})
+```typescript
+import { HttpClient } from "@longdech/bridge";
+
+const httpClient = new HttpClient({
+  baseURL: "https://api.example.com",
+  tokenManager, // Gắn manager để tự động xử lý Bearer token
+  enableDeduplication: true // Chống trùng lặp request GET
+});
+```
+
+### 3. Định nghĩa Service với Hybrid Mapping
+Sử dụng `createServiceProvider` để tạo API layer một cách nhanh chóng.
+
+```typescript
+import { createServiceProvider, createQueryKeys } from "@longdech/bridge";
+
+const userKeys = createQueryKeys("users");
+const defineService = createServiceProvider(httpClient, {
+  // Cấu hình mapping mặc định
+  listDataPath: "data",
+  listTotalPath: (res) => res.meta?.total_count // Hỗ trợ Type-safe callback
+});
+
+export const userService = defineService("/users", userKeys);
+```
+
+### 4. Sử dụng trong React Component
+Sử dụng trực tiếp các hooks được sinh ra tự động.
+
+```tsx
+const UserList = () => {
+  const { data, isLoading } = userService.hooks.useList({ status: "active" });
+  const { mutate: deleteUser } = userService.hooks.useDelete();
+
+  return (
+    <ul>
+      {data?.map(user => (
+        <li key={user.id}>
+          {user.name} 
+          <button onClick={() => deleteUser(user.id)}>Xóa</button>
+        </li>
+      ))}
+    </ul>
+  );
+};
 ```
 
 ---
 
-# Hooks tự động
+## ⚡️ Ưu điểm kỹ thuật
 
-ServiceProvider tạo các hooks sau:
-
-```
-useList
-useInfinite
-useDetail
-useCreate
-useUpdate
-useDelete
-```
+1. **Type-Safety:** Tận dụng tối đa sức mạnh của TypeScript để ngăn lỗi từ lớp dữ liệu.
+2. **Performance:** Tích hợp sẵn cơ chế **Deduplication** cho request GET.
+3. **Mở rộng:** Dễ dàng ghi đè (override) các method API hoặc Hooks cho từng trường hợp cụ thể.
+4. **Consistency:** Đảm bảo toàn bộ ứng dụng sử dụng chung một chuẩn giao tiếp dữ liệu.
 
 ---
 
-# Ví dụ sử dụng
+## 📦 Phát triển
 
-### Query list
+```bash
+# Cài đặt
+pnpm install
 
-```
-const { data } = userService.hooks.useList()
-```
+# Kiểm tra kiểu
+pnpm typecheck
 
-### Query detail
-
-```
-const { data } = userService.hooks.useDetail(userId)
-```
-
-### Infinite query
-
-```
-const {
-  data,
-  fetchNextPage,
-  hasNextPage
-} = userService.hooks.useInfinite()
-```
-
-Trong mọi trường hợp, `lastPage` luôn được chuẩn hóa về shape:
-
-```
-{
-  items: T[],
-  nextCursor?: Cursor
-}
-```
-
-### Mutation
-
-```
-const { mutate } = userService.hooks.useCreate()
-
-mutate({
-  name: "John"
-})
+# Đóng gói
+pnpm build
 ```
 
 ---
-
-# Ví dụ cấu trúc project
-
-```
-src/
-   core/
-   services/
-      user/
-         user.keys.ts
-         user.service.ts
-   components/
-   pages/
-```
-
----
-
-# Tạo service mới
-
-### Bước 1: tạo query keys
-
-```
-export const postKeys = createQueryKeys("posts")
-```
-
-### Bước 2: tạo service
-
-```
-export const postService =
-  defineService("/posts", postKeys)
-```
-
-### Bước 3: sử dụng
-
-```
-postService.hooks.useList()
-postService.hooks.useCreate()
-```
-
----
-
-# Ưu điểm của Bridge
-
-### 1. Chuẩn hóa data layer
-
-Tất cả API trong project dùng cùng một pattern.
-
----
-
-### 2. Reusable
-
-Bridge có thể copy sang project khác.
-
----
-
-### 3. Scalable
-
-Thiết kế phù hợp với codebase lớn:
-
-- 100+ API endpoints
-- nhiều developer cùng làm việc
-
----
-
-### 4. Tích hợp sẵn
-
-- Axios
-- TanStack Query
-- Token refresh queue
-- Event system
-
----
-
-# Khi nào nên dùng Bridge
-
-Bridge phù hợp cho:
-
-- React
-- Next.js
-- React Native
-- Large scale frontend
-
-Đặc biệt hiệu quả với:
-
-- enterprise dashboard
-- SaaS application
-- internal tools
-
----
-
-# Gợi ý mở rộng trong tương lai
-
-Bridge có thể mở rộng thêm:
-
-### Optimistic Update Engine
-
-Tự động update cache khi mutation.
-
----
-
-### Entity Normalization
-
-Chuẩn hóa cache giống Redux Toolkit Query.
-
----
-
-### Auto Service Generator
-
-Sinh service từ OpenAPI / Swagger.
-
----
-
-### Offline Mutation Queue
-
-Cho mobile hoặc PWA.
-
----
-
-# Kết luận
-
-Bridge Core tạo ra một **data infrastructure thống nhất** cho frontend:
-
-- HTTP layer
-- Query layer
-- Service layer
-- Token system
-- Event system
-
-Nhờ đó code trở nên:
-
-- dễ mở rộng
-- dễ bảo trì
-- dễ tái sử dụng giữa nhiều project.
-
----
-
-# Publish NPM
+**@longdech/bridge** - Professional Data Infrastructure for React Applications.
 
 Package đã được cấu hình để publish với tên:
 

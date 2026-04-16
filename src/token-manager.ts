@@ -10,19 +10,32 @@ export interface TokenManagerConfig {
   getAccessToken?: () => string | null
   getRefreshToken?: () => string | null
   /**
-   * Custom validator dùng chung cho cả access token và refresh token.
-   * Mặc định decode JWT và kiểm tra exp.
+   * Custom validator for token validity.
+   * Default: checks JWT expiration.
    */
   isValidToken?: (token: string) => boolean
+  /**
+   * Logic to call refresh token API.
+   */
   executeRefreshToken?: () => Promise<TokenPair>
+  /**
+   * Callback when refresh token is invalid or expired.
+   * Use this to redirect to login or clear app state.
+   */
   onInvalidRefreshToken?: () => void
+  /**
+   * Callback on successful token refresh.
+   */
   onRefreshTokenSuccess?: (token: TokenPair) => void
+  /**
+   * Timeout for refresh token operation in milliseconds. Default: 10000.
+   */
+  refreshTimeout?: number
 }
 
 /**
- * Token manager hỗ trợ 2 mode:
- * - Simple in-memory (set/get/clear)
- * - Advanced refresh flow với queue các request đang chờ (getToken)
+ * Token manager with queuing support.
+ * Ensures only one refresh request is made at a time.
  */
 export class TokenManager {
   private accessToken: string | null = null
@@ -61,32 +74,34 @@ export class TokenManager {
   }
 
   /**
-   * Trả về access token hợp lệ.
-   * Nếu hết hạn và có refresh flow, tự refresh và queue các request đang chờ.
+   * Returns a valid access token.
+   * Logic: Valid? -> Return. Expired? -> Attempt Refresh -> Queue concurrent requests.
    */
   async getToken(): Promise<string> {
     if (this.isDestroyed) return ""
 
-    const accessToken = this.getAccessToken()
-    if (!accessToken) return ""
+    const currentAccessToken = this.getAccessToken()
+    if (!currentAccessToken) return ""
 
-    if (this.isValidToken(accessToken)) return accessToken
+    // 1. If token is still valid, return it immediately
+    if (this.isValidToken(currentAccessToken)) return currentAccessToken
 
-    const refreshToken = this.getRefreshToken()
-    if (!refreshToken) return ""
-
-    if (!this.isValidToken(refreshToken)) {
+    // 2. Token expired, check if we can refresh
+    const currentRefreshToken = this.getRefreshToken()
+    if (!currentRefreshToken || !this.isValidToken(currentRefreshToken)) {
       this.config?.onInvalidRefreshToken?.()
-      throw new Error("Invalid refresh token")
+      return ""
     }
 
     const executeRefreshToken = this.config?.executeRefreshToken
     if (!executeRefreshToken) return ""
 
+    // 3. Start or wait for refresh process
     return new Promise<string>((resolve, reject) => {
+      const timeoutMs = this.config?.refreshTimeout ?? 10000
       const timeout = setTimeout(() => {
-        reject(new Error("Refresh token timeout after 10s"))
-      }, 10000)
+        reject(new Error(`Refresh token timeout after ${timeoutMs}ms`))
+      }, timeoutMs)
 
       this.event.once("refreshDone", (nextToken: unknown) => {
         clearTimeout(timeout)
@@ -110,9 +125,9 @@ export class TokenManager {
           this.finishRefresh(token.accessToken)
         })
         .catch((error) => {
-          console.error("Refresh token failed:", error)
           this.finishRefresh(null)
           this.config?.onInvalidRefreshToken?.()
+          reject(error)
         })
     })
   }
@@ -128,6 +143,7 @@ export class TokenManager {
       if (!token) return false
       const decoded = jwtDecode<JwtPayload>(token)
       if (!decoded.exp) return true
+      // Subtract 5 seconds buffer to prevent race conditions at exact expiration
       return decoded.exp - 5 > Date.now() / 1000
     } catch {
       return false

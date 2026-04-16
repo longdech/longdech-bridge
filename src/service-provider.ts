@@ -1,4 +1,3 @@
-// service-provider.ts
 import {
   useMutation,
   useQuery,
@@ -28,27 +27,27 @@ interface QueryKeys<Params extends Record<string, unknown>> {
 
 interface ServiceOptions<T, Params extends Record<string, unknown>, C extends Page> {
   /**
-   * Query param key cho page, mặc định "page".
+   * Query param key for page-based pagination. Default: "page".
    */
   pageParamKey?: string
   /**
-   * Override toàn bộ mapping config cho service này.
+   * Override mapping configuration for this specific service.
    */
   mapping?: MappingConfig
   /**
-   * Override mapper cho list response.
+   * Functional override for list response mapping.
    */
   mapListResponse?: (payload: unknown) => ListResponse<T>
   /**
-   * Override mapper cho infinite response.
+   * Functional override for infinite response mapping.
    */
   mapInfiniteResponse?: (payload: unknown) => InfiniteResponse<T, C>
   /**
-   * Override getNextPageParam.
+   * Functional override for getNextPageParam.
    */
   getNextPageParam?: (lastPage: InfiniteResponse<T, C>) => C | undefined
   /**
-   * Custom API methods override - FIXED: added proper generic types
+   * Direct API method overrides for edge cases.
    */
   overrides?: Partial<{
     list: (params?: Params) => Promise<ListResponse<T>>
@@ -58,25 +57,13 @@ interface ServiceOptions<T, Params extends Record<string, unknown>, C extends Pa
     update: (id: Id, data: Partial<T>) => Promise<T>
     remove: (id: Id) => Promise<void>
   }>
-  /**
-   * Support page-based infinite (non-cursor)
-   */
-  infiniteType?: "cursor" | "page"
 }
 
 /**
- * Factory tạo API layer + React Query hooks cho một resource CRUD.
+ * Factory to create a specialized API layer + React Query hooks for a resource.
  *
- * @param client - HttpClient instance
- * @param defaultMapping - MappingConfig mặc định cho toàn bộ services tạo từ factory này
- *
- * @example
- * const defineService = createServiceProvider(httpClient, {
- *   listDataPath: "data",
- *   listTotalPath: "meta.total",
- * })
- *
- * const { api, hooks } = defineService("/users", userKeys)
+ * @param client - Shared HttpClient instance
+ * @param defaultMapping - Default mapping config for all services created by this factory
  */
 export function createServiceProvider(client: HttpClient, defaultMapping?: MappingConfig) {
   const toRequestParams = (params?: Record<string, unknown>): HttpQueryParams | undefined =>
@@ -89,7 +76,7 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
   >(baseUrl: string, keys: QueryKeys<Params>, options?: ServiceOptions<T, Params, C>) {
     const pageParamKey = options?.pageParamKey ?? "page"
 
-    // Priority: service mapping > default mapping > fallback rỗng
+    // Resolve mapping: service-specific > factory-default > empty
     const mappingConfig: MappingConfig = options?.mapping ?? defaultMapping ?? {}
     const responseMapper = new ResponseMapper(mappingConfig)
 
@@ -105,11 +92,17 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
       ((lastPage: InfiniteResponse<T, C>) => lastPage.nextCursor ?? undefined)
 
     const api = {
+      /**
+       * Get paginated list.
+       */
       list:
         options?.overrides?.list ??
         ((params?: Params): Promise<ListResponse<T>> =>
           client.get<unknown>(baseUrl, toRequestParams(params)).then(mapListResponse)),
 
+      /**
+       * Get infinite list (cursor or page based).
+       */
       infinite:
         options?.overrides?.infinite ??
         ((params?: Params, page?: C): Promise<InfiniteResponse<T, C>> => {
@@ -121,23 +114,38 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
             .then(mapInfiniteResponse)
         }),
 
+      /**
+       * Get single item by ID.
+       */
       detail:
         options?.overrides?.detail ?? ((id: Id): Promise<T> => client.get<T>(`${baseUrl}/${id}`)),
 
+      /**
+       * Create new item.
+       */
       create:
         options?.overrides?.create ??
         ((data: Partial<T>): Promise<T> => client.post<T>(baseUrl, data)),
 
+      /**
+       * Update existing item.
+       */
       update:
         options?.overrides?.update ??
         ((id: Id, data: Partial<T>): Promise<T> => client.put<T>(`${baseUrl}/${id}`, data)),
 
+      /**
+       * Delete item.
+       */
       remove:
         options?.overrides?.remove ??
         ((id: Id): Promise<void> => client.delete<void>(`${baseUrl}/${id}`)),
     }
 
     const hooks = {
+      /**
+       * Hook for paginated list queries.
+       */
       useList(
         params?: Params,
         queryOptions?: Omit<UseQueryOptions<ListResponse<T>, Error>, "queryKey" | "queryFn">
@@ -149,6 +157,9 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
         })
       },
 
+      /**
+       * Hook for infinite list queries (React Query infinite pattern).
+       */
       useInfinite(
         params?: Params,
         queryOptions?: Omit<
@@ -171,6 +182,9 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
         })
       },
 
+      /**
+       * Hook for single item detail.
+       */
       useDetail(id: Id, queryOptions?: Omit<UseQueryOptions<T, Error>, "queryKey" | "queryFn">) {
         return useQuery({
           queryKey: keys.detail(id),
@@ -180,6 +194,10 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
         })
       },
 
+      /**
+       * Mutation hook for creating items.
+       * Auto-invalidates list queries on success.
+       */
       useCreate() {
         const qc = useQueryClient()
         return useMutation({
@@ -188,6 +206,10 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
         })
       },
 
+      /**
+       * Mutation hook for updating items.
+       * Auto-invalidates record detail and list queries on success.
+       */
       useUpdate() {
         const qc = useQueryClient()
         return useMutation({
@@ -199,6 +221,9 @@ export function createServiceProvider(client: HttpClient, defaultMapping?: Mappi
         })
       },
 
+      /**
+       * Mutation hook for deleting items.
+       */
       useDelete() {
         const qc = useQueryClient()
         return useMutation({

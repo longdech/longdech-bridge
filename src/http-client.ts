@@ -1,6 +1,5 @@
 import axios, {
   AxiosError,
-  type AxiosRequestConfig,
   type AxiosResponse,
   type CreateAxiosDefaults,
   type InternalAxiosRequestConfig,
@@ -17,11 +16,11 @@ export interface HttpRequestOptions<TBody = unknown> {
   params?: HttpQueryParams
   signal?: AbortSignal
   /**
-   * Skip auto token attachment for this request
+   * Skip automatic token attachment for this request.
    */
   skipAuth?: boolean
   /**
-   * Skip deduplication for this request
+   * Skip request deduplication.
    */
   skipDeduplication?: boolean
 }
@@ -31,20 +30,22 @@ export interface HttpClientConfig extends CreateAxiosDefaults {
   tokenManager?: TokenManager
   getToken?: () => Promise<string | null> | string | null
   /**
-   * Gắn locale vào request. VD: request.headers["Accept-Language"] = getLocale()
+   * Hook to attach locale to request (e.g. Accept-Language header).
    */
   attachLocale?: (request: InternalAxiosRequestConfig) => void | Promise<void>
   /**
-   * Gắn domain/tenant vào request nếu cần.
+   * Hook to attach domain or tenant info to request.
    */
   attachDomain?: (request: InternalAxiosRequestConfig) => void | Promise<void>
+  /**
+   * Global toggle for request deduplication. Default: true.
+   */
   enableDeduplication?: boolean
 }
 
 /**
- * Axios-based HTTP client.
- * Tất cả enrichment (token, locale, domain) được config một chỗ qua HttpClientConfig.
- * Error handling và logging để FE tự implement.
+ * Axios-based HTTP client with focus on enrichment and performance.
+ * Handles automatic token injection, request queuing, and deduplication.
  */
 export class HttpClient {
   protected instance: ReturnType<typeof axios.create>
@@ -77,22 +78,17 @@ export class HttpClient {
         await this.enrichRequest(request)
         return request
       },
-      (error: AxiosError) => {
-        return Promise.reject(error)
-      }
+      (error: AxiosError) => Promise.reject(error)
     )
 
     this.instance.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
-        return Promise.reject(error)
-      }
+      (error: AxiosError) => Promise.reject(error)
     )
   }
 
   /**
-   * Enrichment pipeline: token → locale → domain.
-   * Override method này trong subclass nếu cần custom thêm.
+   * Pipeline for request enrichment: Auth -> Locale -> Domain.
    */
   protected async enrichRequest(request: InternalAxiosRequestConfig) {
     const skipAuth = (request as any).skipAuth
@@ -109,12 +105,18 @@ export class HttpClient {
     await this.attachDomain?.(request)
   }
 
+  /**
+   * Generate a unique key for GET request deduplication.
+   */
   private getDedupeKey(url: string, options: HttpRequestOptions): string {
     const headersHash = options.headers ? JSON.stringify(options.headers) : ""
     const skipAuth = options.skipAuth ? "skip" : ""
     return JSON.stringify({ url, params: options.params, headersHash, skipAuth })
   }
 
+  /**
+   * Core request method.
+   */
   async request<TResponse, TBody = unknown>(
     url: string,
     options: HttpRequestOptions<TBody> = {}
@@ -175,7 +177,7 @@ export class HttpClient {
   }
 
   /**
-   * Upload file với multipart/form-data
+   * Upload file using multipart/form-data.
    */
   upload<TResponse>(
     url: string,

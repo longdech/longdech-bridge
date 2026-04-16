@@ -1,9 +1,9 @@
 import { QueryClient, type QueryClientConfig } from "@tanstack/react-query"
 
 /**
- * Default QueryClient config:
- * - staleTime 1 phút để giảm request lặp
- * - tắt refetch khi focus lại tab để tránh flicker
+ * Default QueryClient configuration:
+ * - 1-minute staleTime to reduce redundant requests.
+ * - disabled refetch on window focus to avoid unwanted flickers.
  */
 const defaultConfig: QueryClientConfig = {
   defaultOptions: {
@@ -23,7 +23,7 @@ const defaultConfig: QueryClientConfig = {
 }
 
 /**
- * Tạo QueryClient với config có thể override.
+ * Creates a QueryClient with optional configuration overrides.
  */
 export function createQueryClient(config?: QueryClientConfig): QueryClient {
   return new QueryClient({
@@ -43,6 +43,6 @@ export function createQueryClient(config?: QueryClientConfig): QueryClient {
 }
 
 /**
- * Shared QueryClient instance cho app.
+ * Shared QueryClient instance for the application.
  */
 export const queryClient = createQueryClient()

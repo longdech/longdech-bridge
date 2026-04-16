@@ -9,11 +9,18 @@ export type Id = string | number
 export type Page = string | number | null | undefined
 
 /**
+ * Path resolver can be a nested string path (e.g. "meta.total")
+ * or a mapper function for maximum performance and type safety.
+ */
+export type PathResolver<T, R> = string | ((data: T) => R)
+
+/**
  * Pagination metadata for list response.
  */
 export interface PaginationMeta {
   currentPage: number
   perPage: number
+  nextPage: number | null
   total: number
   totalPages: number
   hasNextPage: boolean
@@ -43,31 +50,29 @@ export interface InfiniteResponse<T, C = Page> {
 
 /**
  * Mapping configuration for ResponseMapper.
- * Tự define theo backend của bạn, không dùng preset.
  */
 export interface MappingConfig {
-  // List response
-  listDataPath?: string
-  listTotalPath?: string
-  listPagePath?: string
-  listLimitPath?: string
-  listTotalPagesPath?: string
+  // List response mapping
+  listDataPath?: PathResolver<any, any[]>
+  listTotalPath?: PathResolver<any, number>
+  listPagePath?: PathResolver<any, number>
+  listLimitPath?: PathResolver<any, number>
+  listTotalPagesPath?: PathResolver<any, number>
 
-  // Infinite response
-  infiniteItemsPath?: string
-  infiniteNextCursorPath?: string
-  infinitePrevCursorPath?: string
-  infiniteHasNextPath?: string
-  infiniteHasPrevPath?: string
+  // Infinite response mapping
+  infiniteItemsPath?: PathResolver<any, any[]>
+  infiniteNextCursorPath?: PathResolver<any, any>
+  infinitePrevCursorPath?: PathResolver<any, any>
+  infiniteHasNextPath?: PathResolver<any, boolean>
+  infiniteHasPrevPath?: PathResolver<any, boolean>
 
-  // Transformers
+  // Direct transformers
   transformPage?: (page: number) => number
   transformCursor?: (cursor: any) => any
 }
 
 /**
- * API error response shape (common).
- * FE tự định nghĩa dựa trên backend của mình.
+ * API error response shape.
  */
 export interface ApiErrorResponse {
   error: string
@@ -77,7 +82,7 @@ export interface ApiErrorResponse {
 }
 
 /**
- * Type guard để kiểm tra API error response.
+ * Type guard to check if payload is an API error response.
  */
 export function isApiErrorResponse(payload: unknown): payload is ApiErrorResponse {
   return (
@@ -90,7 +95,7 @@ export function isApiErrorResponse(payload: unknown): payload is ApiErrorRespons
 }
 
 /**
- * Pagination params.
+ * Standard pagination params.
  */
 export interface PaginationParams {
   page?: number

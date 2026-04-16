@@ -2,7 +2,8 @@ export type QueryParams = Record<string, unknown>
 type QueryValue = string | number | boolean | QueryValue[] | QueryParams | null | undefined
 
 /**
- * Sort params by key để query key luôn deterministic.
+ * Sorts parameters by key to ensure deterministic query keys.
+ * This prevents unnecessary refetches in React Query.
  */
 function stableParams(params: QueryParams): QueryParams {
   const stableValue = (value: QueryValue): QueryValue => {
@@ -22,8 +23,8 @@ function stableParams(params: QueryParams): QueryParams {
 }
 
 /**
- * Query key factory theo từng resource scope.
- * Dùng chung để tránh key mismatch giữa hooks/mutations.
+ * Query key factory for resource scoping.
+ * Standardizes keys across hooks and mutations to prevent mismatches.
  *
  * @example
  * const userKeys = createQueryKeys("users")
@@ -43,7 +44,7 @@ export function createQueryKeys<const T extends string>(scope: T) {
         : ([scope, "infinite"] as const),
     details: () => [scope, "detail"] as const,
     detail: (id: string | number) => [scope, "detail", id] as const,
-    // Custom key generator
+    /** Generate a custom key nested within the resource scope. */
     custom: (...parts: unknown[]) => [scope, ...parts] as const,
   }
 }

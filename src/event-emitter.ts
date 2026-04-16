@@ -1,8 +1,8 @@
 export type EventCallback = (...args: unknown[]) => void
 
 /**
- * Lightweight event emitter cho internal app events.
- * Hỗ trợ on/off/once/emit.
+ * Lightweight event emitter for internal application events.
+ * Supports on/off/once/emit patterns.
  */
 export class EventEmitter {
   private events: Map<string, Set<EventCallback>> = new Map()
@@ -15,7 +15,8 @@ export class EventEmitter {
   }
 
   /**
-   * Đăng ký listener cho event.
+   * Register a listener for an event.
+   * Returns an unsubscribe function.
    */
   on(eventName: string, fn: EventCallback): () => void {
     this.getOrCreateEventList(eventName).add(fn)
@@ -23,7 +24,7 @@ export class EventEmitter {
   }
 
   /**
-   * Đăng ký listener chỉ chạy một lần.
+   * Register a listener that runs only once.
    */
   once(eventName: string, fn: EventCallback): () => void {
     const onceFn = (...args: unknown[]) => {
@@ -35,7 +36,7 @@ export class EventEmitter {
   }
 
   /**
-   * Phát sự kiện.
+   * Emit an event to all registered listeners.
    */
   emit(eventName: string, ...args: unknown[]) {
     const callbacks = this.events.get(eventName)
@@ -44,7 +45,7 @@ export class EventEmitter {
   }
 
   /**
-   * Hủy đăng ký listener.
+   * Unregister a listener for an event.
    */
   off(eventName: string, fn: EventCallback) {
     const callbacks = this.events.get(eventName)
@@ -56,7 +57,7 @@ export class EventEmitter {
   }
 
   /**
-   * Xóa tất cả listeners của một event hoặc toàn bộ.
+   * Remove all listeners for a specific event or all events if none specified.
    */
   removeAllListeners(eventName?: string) {
     if (eventName) {
@@ -67,7 +68,7 @@ export class EventEmitter {
   }
 
   /**
-   * Lấy số lượng listeners của một event.
+   * Get the number of listeners for a specific event.
    */
   listenerCount(eventName: string): number {
     return this.events.get(eventName)?.size ?? 0
